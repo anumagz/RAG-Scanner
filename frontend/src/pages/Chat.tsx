@@ -159,14 +159,12 @@ function Chat() {
     const trimmedQuestion =
       question.trim();
 
-
     if (
       !trimmedQuestion ||
       isLoading
     ) {
       return;
     }
-
 
     if (
       !repositoryId ||
@@ -185,64 +183,142 @@ function Chat() {
       return;
     }
 
-
     const userMessage: Message = {
       role: "user",
       content: trimmedQuestion,
     };
-
 
     setMessages((previous) => [
       ...previous,
       userMessage,
     ]);
 
-
     setQuestion("");
     setIsLoading(true);
 
+    let assistantStarted = false;
+
+    const updateAssistant = (
+      updater: (message: Message) => Message
+    ) => {
+      setMessages((previous) => {
+        const lastIndex = previous.length - 1;
+
+        if (
+          lastIndex < 0 ||
+          previous[lastIndex].role !== "assistant"
+        ) {
+          return previous;
+        }
+
+        const next = [...previous];
+        next[lastIndex] = updater(next[lastIndex]);
+
+        return next;
+      });
+    };
+
+    const appendToken = (token: string) => {
+      if (!token) {
+        return;
+      }
+
+      if (!assistantStarted) {
+        assistantStarted = true;
+
+        setMessages((previous) => [
+          ...previous,
+          {
+            role: "assistant",
+            content: token,
+          },
+        ]);
+
+        return;
+      }
+
+      updateAssistant((message) => ({
+        ...message,
+        content: message.content + token,
+      }));
+    };
+
+    const attachSources = (
+      sources: BackendSource[]
+    ) => {
+      const convertedSources =
+        sources.map(convertSource);
+
+      if (!assistantStarted) {
+        assistantStarted = true;
+
+        setMessages((previous) => [
+          ...previous,
+          {
+            role: "assistant",
+            content: "",
+            sources: convertedSources,
+          },
+        ]);
+
+        return;
+      }
+
+      updateAssistant((message) => ({
+        ...message,
+        sources: convertedSources,
+      }));
+    };
+
+    const processStreamLine = (
+      line: string
+    ) => {
+      if (!line.trim()) {
+        return;
+      }
+
+      const event = JSON.parse(line) as {
+        type: "token" | "sources" | "done" | "error";
+        content?: string;
+        sources?: BackendSource[];
+        message?: string;
+      };
+
+      if (event.type === "token") {
+        appendToken(event.content || "");
+      } else if (event.type === "sources") {
+        attachSources(event.sources || []);
+      } else if (event.type === "error") {
+        throw new Error(
+          event.message ||
+            "The AI stream failed."
+        );
+      }
+    };
 
     try {
-
-      /*
-       * REAL FASTAPI REQUEST
-       *
-       * POST /chat
-       *
-       * {
-       *   repository_id: 2,
-       *   question: "..."
-       * }
-       */
-
       const response = await fetch(
-        `${API_BASE_URL}/chat`,
+        `${API_BASE_URL}/chat/stream`,
         {
           method: "POST",
-
           headers: {
             "Content-Type":
               "application/json",
           },
-
           body: JSON.stringify({
             repository_id:
               repositoryId,
-
             question:
               trimmedQuestion,
           }),
         }
       );
 
-
       if (!response.ok) {
-
         let errorMessage =
           `Chat request failed (${response.status})`;
 
         try {
-
           const errorData =
             await response.json();
 
@@ -250,67 +326,96 @@ function Chat() {
             errorMessage =
               errorData.detail;
           }
-
         } catch {
           // Ignore JSON parsing errors
         }
 
+        throw new Error(errorMessage);
+      }
 
+      if (!response.body) {
         throw new Error(
-          errorMessage
+          "Streaming response is unavailable."
         );
       }
 
+      const reader =
+        response.body.getReader();
 
-      const data: ChatResponse =
-        await response.json();
+      const decoder =
+        new TextDecoder();
 
+      let buffer = "";
 
-      const assistantMessage: Message = {
-        role: "assistant",
+      while (true) {
+        const {
+          value,
+          done,
+        } = await reader.read();
 
-        content:
-          data.answer ||
-          "The AI did not return an answer.",
+        buffer += decoder.decode(
+          value,
+          {
+            stream: !done,
+          }
+        );
 
-        sources:
-          (data.sources || [])
-            .map(convertSource),
-      };
+        const lines =
+          buffer.split("\n");
 
+        buffer =
+          lines.pop() || "";
 
-      setMessages((previous) => [
-        ...previous,
-        assistantMessage,
-      ]);
+        for (const line of lines) {
+          processStreamLine(line);
+        }
+
+        if (done) {
+          break;
+        }
+      }
+
+      if (buffer.trim()) {
+        processStreamLine(buffer);
+      }
+
+      if (!assistantStarted) {
+        appendToken(
+          "The AI did not return an answer."
+        );
+      }
 
     } catch (error) {
-
       console.error(
         "Chat error:",
         error
       );
-
 
       const errorMessage =
         error instanceof Error
           ? error.message
           : "Unable to connect to the RAG backend.";
 
-
-      setMessages((previous) => [
-        ...previous,
-        {
-          role: "assistant",
+      if (assistantStarted) {
+        updateAssistant((message) => ({
+          ...message,
           content:
+            message.content ||
             `Sorry, I couldn't process your question.\n\n${errorMessage}`,
-        },
-      ]);
+        }));
+      } else {
+        setMessages((previous) => [
+          ...previous,
+          {
+            role: "assistant",
+            content:
+              `Sorry, I couldn't process your question.\n\n${errorMessage}`,
+          },
+        ]);
+      }
 
     } finally {
-
       setIsLoading(false);
-
     }
   };
 
@@ -581,7 +686,7 @@ function Chat() {
 
           {/* Loading */}
 
-          {isLoading && (
+          {isLoading &&\n            messages[messages.length - 1]?.role !== "assistant" && (
 
             <div className="flex gap-4">
 

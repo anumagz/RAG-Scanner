@@ -1,5 +1,19 @@
-from rag.generator import generate_answer
+import os
+from collections.abc import Iterator
+
+from rag.generator import (
+    generate_answer,
+    stream_answer,
+)
 from rag.retriever import retrieve
+
+
+MAX_CONTEXT_CHARS = int(
+    os.getenv(
+        "RAG_MAX_CONTEXT_CHARS",
+        "12000",
+    )
+)
 
 
 def format_source(
@@ -45,9 +59,11 @@ def format_source(
 
 def build_context(
     chunks: list[dict],
-) -> str:
+) -> tuple[str, list[dict]]:
 
     sections = []
+    selected_chunks = []
+    current_size = 0
 
     for index, chunk in enumerate(
         chunks,
@@ -96,50 +112,43 @@ def build_context(
 
             location = ""
 
-        sections.append(
-            f"""
+        section = f"""
 --- Context {index} ---
 Source: {source}
 {location}
 
 {chunk['text']}
 """
+
+        remaining = (
+            MAX_CONTEXT_CHARS
+            - current_size
         )
 
-    return "\n".join(sections)
+        if remaining <= 0:
+            break
 
+        if len(section) > remaining:
+            section = section[:remaining]
 
-def chat(
-    question: str,
-    repository_id: int | None = None,
-):
+        sections.append(section)
+        selected_chunks.append(chunk)
+        current_size += len(section)
 
-    chunks = retrieve(
-        question=question,
-        repository_id=repository_id,
+        if current_size >= MAX_CONTEXT_CHARS:
+            break
+
+    return (
+        "\n".join(sections),
+        selected_chunks,
     )
 
-    if not chunks:
 
-        return {
-            "answer": (
-                "I could not find relevant "
-                "information in the indexed repository."
-            ),
-            "sources": [],
-        }
-
-    context = build_context(
-        chunks
-    )
-
-    answer = generate_answer(
-        question=question,
-        context=context,
-    )
+def _sources_from_chunks(
+    chunks: list[dict],
+) -> list[dict]:
 
     sources = []
-
     seen = set()
 
     for chunk in chunks:
@@ -152,14 +161,120 @@ def chat(
             metadata
         )
 
-        key = str(source)
+        key = tuple(
+            sorted(source.items())
+        )
 
         if key not in seen:
 
             seen.add(key)
             sources.append(source)
 
+    return sources
+
+
+def _prepare_chat(
+    question: str,
+    repository_id: int | None,
+) -> tuple[str | None, list[dict]]:
+
+    chunks = retrieve(
+        question=question,
+        repository_id=repository_id,
+    )
+
+    if not chunks:
+        return None, []
+
+    context, selected_chunks = (
+        build_context(chunks)
+    )
+
+    return (
+        context,
+        _sources_from_chunks(
+            selected_chunks
+        ),
+    )
+
+
+def chat(
+    question: str,
+    repository_id: int | None = None,
+):
+
+    context, sources = _prepare_chat(
+        question=question,
+        repository_id=repository_id,
+    )
+
+    if context is None:
+
+        return {
+            "answer": (
+                "I could not find relevant "
+                "information in the indexed repository."
+            ),
+            "sources": [],
+        }
+
+    answer = generate_answer(
+        question=question,
+        context=context,
+    )
+
     return {
         "answer": answer,
         "sources": sources,
+    }
+
+
+def stream_chat(
+    question: str,
+    repository_id: int | None = None,
+) -> Iterator[dict]:
+
+    context, sources = _prepare_chat(
+        question=question,
+        repository_id=repository_id,
+    )
+
+    if context is None:
+
+        yield {
+            "type": "token",
+            "content": (
+                "I could not find relevant "
+                "information in the indexed repository."
+            ),
+        }
+
+        yield {
+            "type": "sources",
+            "sources": [],
+        }
+
+        yield {
+            "type": "done",
+        }
+
+        return
+
+    for token in stream_answer(
+        question=question,
+        context=context,
+    ):
+
+        yield {
+            "type": "token",
+            "content": token,
+        }
+
+    yield {
+        "type": "sources",
+        "sources": sources,
+    }
+
+    yield {
+        "type": "done",
     }

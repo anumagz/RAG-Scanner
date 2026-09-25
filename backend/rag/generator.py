@@ -1,4 +1,11 @@
-from utils.ollama_client import generate
+import os
+from collections.abc import Iterator
+
+from utils.ollama_client import (
+    CHAT_MODEL,
+    generate,
+    stream_generate,
+)
 
 
 SYSTEM_PROMPT = """
@@ -25,12 +32,20 @@ Rules:
 """
 
 
-def generate_answer(
+CHAT_NUM_PREDICT = int(
+    os.getenv(
+        "OLLAMA_CHAT_NUM_PREDICT",
+        "384",
+    )
+)
+
+
+def _build_prompt(
     question: str,
     context: str,
 ) -> str:
 
-    prompt = f"""
+    return f"""
 Repository Context:
 
 {context}
@@ -43,9 +58,36 @@ Answer the question based only on the
 repository context above.
 """
 
+
+def generate_answer(
+    question: str,
+    context: str,
+) -> str:
+
     return generate(
-        prompt=prompt,
-        model="qwen2.5:3b",
+        prompt=_build_prompt(
+            question=question,
+            context=context,
+        ),
+        model=CHAT_MODEL,
         system=SYSTEM_PROMPT,
         temperature=0.1,
+        num_predict=CHAT_NUM_PREDICT,
+    )
+
+
+def stream_answer(
+    question: str,
+    context: str,
+) -> Iterator[str]:
+
+    yield from stream_generate(
+        prompt=_build_prompt(
+            question=question,
+            context=context,
+        ),
+        model=CHAT_MODEL,
+        system=SYSTEM_PROMPT,
+        temperature=0.1,
+        num_predict=CHAT_NUM_PREDICT,
     )

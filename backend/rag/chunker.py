@@ -1,10 +1,27 @@
+import os
+
 from parsers.base import ParsedDocument
+
+
+DEFAULT_CHUNK_SIZE = int(
+    os.getenv(
+        "RAG_CHUNK_SIZE",
+        "500",
+    )
+)
+
+DEFAULT_CHUNK_OVERLAP = int(
+    os.getenv(
+        "RAG_CHUNK_OVERLAP",
+        "50",
+    )
+)
 
 
 def chunk_document(
     document: ParsedDocument,
-    chunk_size: int = 1000,
-    overlap: int = 100,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> list[ParsedDocument]:
 
     text = document.text.strip()
@@ -12,10 +29,19 @@ def chunk_document(
     if not text:
         return []
 
+    if chunk_size <= 0:
+        raise ValueError(
+            "chunk_size must be greater than zero."
+        )
+
+    overlap = max(
+        0,
+        min(overlap, chunk_size - 1),
+    )
+
     words = text.split()
 
     if len(words) <= chunk_size:
-
         return [document]
 
     chunks = []

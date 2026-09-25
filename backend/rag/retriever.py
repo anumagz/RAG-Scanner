@@ -7,7 +7,7 @@ from utils.ollama_client import embed
 TOP_K = int(
     os.getenv(
         "RAG_TOP_K",
-        "6"
+        "4",
     )
 )
 
@@ -31,7 +31,7 @@ def retrieve(
 
     result = search(
         embedding=question_embedding,
-        n_results=top_k,
+        n_results=max(1, top_k),
         where=where,
     )
 
