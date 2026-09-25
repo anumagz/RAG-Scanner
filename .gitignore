@@ -1,21 +1,90 @@
+# ==============================
+# Node.js / React / Vite
+# ==============================
+node_modules/
+dist/
+build/
+.vite/
+
+# ==============================
+# Environment Variables
+# ==============================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ==============================
 # Python
-backend/.venv/
-**/.venv/
-**/__pycache__/
-*.pyc
+# ==============================
+__pycache__/
+*.py[cod]
 *.pyo
 *.pyd
-.env
-.env.*
 
-# Node / frontend
-frontend/node_modules/
-**/node_modules/
-frontend/dist/
-frontend/build/
+# Python virtual environments
+.venv/
+venv/
+env/
+backend/.venv/
+
+# ==============================
+# Database
+# ==============================
+*.db
+*.sqlite
+*.sqlite3
+
+# ==============================
+# ChromaDB / Vector Storage
+# ==============================
+chroma_db/
+
+# ==============================
+# Logs
+# ==============================
 *.log
+logs/
 
-# OS / editor
+# ==============================
+# IDE / Editors
+# ==============================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==============================
+# OS Generated Files
+# ==============================
 .DS_Store
 Thumbs.db
-.vscode/
+desktop.ini
+
+# ==============================
+# Python Testing / Coverage
+# ==============================
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# ==============================
+# Build / Temporary Files
+# ==============================
+*.tmp
+*.temp
+*.bak
+
+# ==============================
+# Jupyter
+# ==============================
+.ipynb_checkpoints/
+
+# ==============================
+# Project-specific local data
+# ==============================
+uploads/
+temp/
+cache/
